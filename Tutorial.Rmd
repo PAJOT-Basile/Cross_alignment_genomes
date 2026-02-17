@@ -1,0 +1,161 @@
+---
+title: "Tutorial Synteny analyses"
+author: "Basile PAJOT"
+date: "2026-01-27"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+```{r}
+if (!require("pacman")) install.packages("pacman")
+libraries <- c("tidyverse")
+#pacman::p_load(char = libraries, character.only = TRUE)
+pacman::p_load(char = c("dplyr", "tibble", "ggplot2", "readr", "tidyr", "stringr", "forcats", "lubridate", "purrr"))
+```
+
+# Import useful variables
+
+```{r, class.source="fold-show"}
+# Where are located the reference genomes
+folder_ref_genomes <- "/shared/projects/sexisol/archive/genomes_reference/"
+# What are the names of the reference genomes
+vector_ref_genomes <- list.files(folder_ref_genomes, pattern = ".fasta$")
+
+# Where to store the output
+out_folder <- "/shared/projects/sexisol/finalresult/Synteny_analyses/"
+# Create the output folder if it does not exist
+if (!dir.exists(out_folder)){
+  dir.create(out_folder)
+}
+```
+
+# Useful functions
+
+```{r, class.source="fold-show"}
+get_species_name_from_ref_genome <- function(ref_name, position_in_name=2){
+  #' Get the name of the species using the name of the reference genome
+  #' @description
+    #' This function splits the standardised name of the reference genome to get the name of the species.
+    #' The standard name should look something like: `Jaera_albifrons_chromosomes.fasta`.
+  #' @param ref_name This is a string with the name of the reference genome. It is like the example in the description.
+  #' @param position_in_name `default=2`. This argument describes the position of the name to return in the name of the
+  #' reference genome.
+  #'
+  #' @returns string. It returns the name of the species that was stored in the name of the reference genome.
+  return(str_split_1(ref_name, "_")[position_in_name])
+}
+
+align_ref_genomes <- function(){
+  #' Align reference genomes
+  #' @description This way too long function is used to align reference genomes on one another.
+    #' It iterates on all unique combination of reference genomes to algin them on one another. A part 
+    #' of the function is taylored to my study as I am looking to align reference genomes in a specific
+    #' order. The lines can be commented if it is not useful and these lines will be indicated in commentry.
+    #' This function calls the minimap2 aligner using a bash script to run it in parallel for all the 
+    #' combinations of reference genomes.
+  #'
+  #' @param None
+  #'
+  #' @returns None
+
+  # Make the unique pairs of reference genomes
+  combination_of_genomes <- combn(vector_ref_genomes, 2)
+  # Iterate over these pairs of reference genomes
+  for (col in 1:ncol(combination_of_genomes)){
+    # Get the names of the reference genomes
+    ref_genome_1 <- combination_of_genomes[1, col]
+    ref_genome_2 <- combination_of_genomes[2, col]
+    # Check that the firt genome is either praehirsuta or albifrons. Otherwise, change them
+    # These lines can be commented as they are taylored to my study. You can comment from here ...
+    if ((grepl("praehirsuta", ref_genome_2)) & (grepl("albifrons", ref_genome_1))){
+      .temp_var. <- ref_genome_2
+      ref_genome_2 <- ref_genome_1
+      ref_genome_1 <- .temp_var.
+      rm(.temp_var.)
+    }
+    # ... to here
+    # Get the name of the output file
+    name_output <- paste0(
+      out_folder,
+      get_species_name_from_ref_genome(ref_genome_2),
+      "_aligned_on_",
+      get_species_name_from_ref_genome(ref_genome_1),
+      ".paf"
+    )
+    
+    # Build the command line
+    command_line  <- paste0("/shared/projects/sexisol/script/Basile/Cross_alignment_of_ref_genomes/Scripts/run_minimap2_for_reference_genomes.sh ",
+            folder_ref_genomes, ref_genome_1, " ", folder_ref_genomes, ref_genome_2, " ",
+            name_output)
+
+    print(paste("command_line: sbatch", command_line))
+    
+    # Run minimap2 using the bash script on a cluster
+    system2(command = "sbatch",
+            args = paste0("/shared/projects/sexisol/script/Basile/Cross_alignment_of_ref_genomes/Scripts/run_minimap2_for_reference_genomes.sh ",
+            folder_ref_genomes, ref_genome_1, " ", folder_ref_genomes, ref_genome_2, " ",
+            name_output))
+  }
+}
+
+are_there_paf_files_in_outfolder <- function(folder_to_check){
+  #' Check if there are any paf files in a folder
+  #' @description This function simply checks if there are any `.paf` files in the
+    #' specified folder.
+  #'
+  #' @param folder_to_check This string is the path of the folder to check for `.paf files`
+  #'
+  #' @returns TRUE/FALSE The function returns TRUE if there is at least one `.paf` file in the
+  #' specified folder
+
+  number_paf_files_output <- length(list.files(folder_to_check, patt = ".paf"))
+  return(number_paf_files_output > 0)
+}
+```
+
+# Align reference genomes
+
+To do this, we use `minimap2` that allows to map one genome to another one. It produces `.paf` files. To run minimap2, we start it on the cluster
+```{r}
+# Do the pairwise alignment of the genomes if it is not yet done
+# As the output of minimap2 is a paf file, we simply check if there are any paf files in the output folder
+# to check if the reference genomes were aligned.
+if (!are_there_paf_files_in_outfolder(out_folder)){
+  align_ref_genomes()
+}
+
+```
+
+This step takes a bit of time, so you can sit back and eat a snack while it runs on the cluster ;).
+
+
+# Import useful variables
+```{r, class.source="fold-show"}
+# Where are located the reference genomes
+folder_ref_genomes <- "/shared/projects/sexisol/archive/genomes_reference/"
+```
+
+# Test of syntenyPlotteR
+```{r}
+# Download and load the library
+pacman::p_load(syntenyPlotteR)
+```
+
+
+
+
+
+```{r, class.source="fold-show"}
+
+```
+
