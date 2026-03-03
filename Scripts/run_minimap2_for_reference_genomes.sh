@@ -11,5 +11,5 @@ out_name="${3}"
 
 
 # Run minimap2
-/shared/software/miniconda/envs/minimap2-2.28/bin/minimap2 "${ref_genome_1}" "${ref_genome_2}" > "${out_name}"
+/shared/software/miniconda/envs/minimap2-2.28/bin/minimap2 -x asm20 "${ref_genome_1}" "${ref_genome_2}" > "${out_name}"
 echo "Done!"
