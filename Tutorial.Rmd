@@ -294,6 +294,18 @@ prae_on_ischio <- import_paf("/shared/projects/sexisol/finalresult/Synteny_analy
 albi_on_prae <- import_paf("/shared/projects/sexisol/finalresult/Synteny_analyses/albifrons_aligned_on_praehirsuta.paf")
 
 ischio_on_albi <- import_paf("/shared/projects/sexisol/finalresult/Synteny_analyses/ischiosetosa_aligned_on_albifrons.paf")
+
+# Bind all the tables
+all_correspondances <- prae_on_ischio %>% 
+  mutate(query = "praehirsuta",
+         target = "ischiosetosa") %>% 
+  rbind(albi_on_prae %>% 
+          mutate(query = "albifrons",
+                 target = "praehirsuta")) %>% 
+  rbind(ischio_on_albi %>% 
+          mutate(query = "ischiosetosa",
+                 target = "albifrons")) %>% 
+  mutate(across(contains("name"), ~ str_split_fixed(., "\\.", 2)[, 1]))
 ```
 ## Plots
 ### Dotplot
@@ -399,11 +411,124 @@ ischio_on_albi %>%
   guides(colour = guide_legend(override.aes = list(alpha = 1))) +
   my_theme
 ```
+### Synteny plots
+```{r}
+aln_prae_ischio <- read_paf("/shared/projects/sexisol/finalresult/Synteny_analyses/praehirsuta_aligned_on_ischiosetosa.paf") %>% 
+  subset(alen > 5e5)
+
+plot_synteny(aln_prae_ischio, q_chrom = "OZ242391.1", t_chrom = "OZ239486.1", centre = T)
+
+plot_coverage(aln_prae_ischio, fill="qname")
+```
+### Manual plots
+```{r}
+correspondance_chroms <- all_correspondances %>% 
+  group_by(query, target, qname, tname) %>% 
+  summarise(total_length = sum(alen)) %>% 
+  arrange(desc(total_length)) %>% 
+  dplyr::slice(1) %>% 
+  ungroup() %>% 
+  select(-total_length)
+
+
+albi_chroms <- correspondance_chroms %>% 
+  filter(query == "albifrons") %>% 
+  left_join(all_chromosomes %>% 
+              select(Chromosome, Chrom),
+            by = join_by("tname" == "Chromosome")) %>% 
+  mutate(Chrom = case_when(
+    Chrom == "LG6.a" ~ "LG6.a-b",
+    Chrom == "LG5.b-c" & tname == "OZ349670" ~ "LG5.b",
+    Chrom == "LG5.b-c" & qname == "OZ349669" ~ "LG5.c",
+    qname == "OZ349663" ~ "LG8",
+    TRUE ~ Chrom
+  ))
+
+ischio_chroms <- correspondance_chroms %>% 
+  filter(target == "ischiosetosa") %>% 
+  left_join(all_chromosomes %>% 
+              select(Chromosome, Chrom),
+            by = join_by("qname" == "Chromosome"))
+
+# Redo the positions of the chromosomes
+all_chromosomes <- albi_chroms %>%
+  rename(Species = query,
+         Chromosome = qname) %>% 
+  select(Species, Chromosome, Chrom) %>% 
+  rbind(chromosomes_prae_ordered %>% 
+          mutate(Species = "praehirsuta")) %>% 
+  rbind(ischio_chroms %>% 
+          rename(Species = target,
+                 Chromosome = tname) %>% 
+          select(Species, Chromosome, Chrom)) %>% 
+  left_join(all_chromosomes %>% 
+              select(Chromosome, Species, Length),
+            by = c("Chromosome", "Species")) %>% 
+  group_by(Species) %>% 
+  arrange(Species, Chrom) %>% 
+  mutate(Position_cumul = cumsum(lag(Length + 1, default = 0))) %>% 
+  ungroup
 
 
 
-# Test macrosyntR
-```{bash}
+# Test just for one chromosome pair
+correspondance_chroms %>% 
+  filter(query != "praehirsuta") %>%
+  left_join(all_correspondances,
+            by = c("query", "target", "qname", "tname")) %>% 
+  left_join(all_chromosomes %>% 
+              select(Chromosome, Species, Position_cumul),
+            by = join_by("qname" == "Chromosome", "query" == "Species")) %>% 
+  mutate(qstart = qstart + Position_cumul) %>% 
+  select(-Position_cumul) %>% 
+  left_join(all_chromosomes %>% 
+              select(Chromosome, Species, Position_cumul),
+            by = join_by("tname" == "Chromosome", "target" == "Species")) %>% 
+  mutate(tstart = tstart + Position_cumul) %>% 
+  filter(alen > 1e4) %>% 
+  select(query, target, qname, tname, qstart, tstart) %>% 
+  pivot_longer(cols = contains("name"), names_to = "tata", values_to = "Chromosome") %>% 
+  mutate(query = factor(query, levels = c("ischiosetosa", "albifrons", "praehirsuta"))) %>% 
+  left_join(all_chromosomes %>% 
+              select(Chromosome, Chrom),
+            by = "Chromosome") %>% 
+  mutate(Chrom = str_split_fixed(Chrom, "\\.", 2)[, 1]) %>% 
+  ggplot() +
+  geom_segment(aes(x = qstart, xend = tstart, y = query, yend = target, colour = Chrom), alpha = 0.02) +
+  my_theme +
+  theme(legend.position = "none")
+
+
+
+correspondance_chroms %>% 
+  filter(query == "albifrons") %>% 
+  left_join(all_chromosomes %>% 
+              select(Chromosome, Chrom),
+            by = join_by("tname" == "Chromosome")) %>% 
+  arrange(Chrom) %>% 
+  left_join(all_correspondances,
+            by = c("qname", "tname", "query", "target")) %>% 
+  group_by(qname) %>% 
+  mutate()
+
+  
+```
+
+
+# Test SyntenyploR
+```{r}
+pacman::p_load("syntenyPlotteR")
+reformat.syntenyData(file_data = "/shared/projects/sexisol/finalresult/Synteny_analyses/praehirsuta_aligned_on_ischiosetosa.paf",
+                     directory = "/shared/projects/sexisol/finalresult/Synteny_analyses/test/",
+                     filename = "prae_on_ischio",
+                     reference.species = "ischio",
+                     target.species = "prae")
+
+draw.eh(directory = "/shared/projects/sexisol/finalresult/Synteny_analyses/test/",
+        output = "draw_eh", chrRange = 1:12,
+        data_file = "/shared/projects/sexisol/finalresult/Synteny_analyses/test/prae_on_ischio.txt")
 
 ```
+
+This package does not work, at least the reformatting part from a paf file. The reformatting must be done from a DESCHRAMBLER format or a inferCARs format.
 
