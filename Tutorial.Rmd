@@ -366,109 +366,35 @@ all_correspondences %>%
 ```
 
 
-# Bin
-### Dotplot
-```{r}
-# Prae on ischio
-# prae_on_ischio %>% 
-#   mutate(across(contains("name"), ~ str_split_fixed(., "\\.", 2)[, 1])) %>% 
-#   select(contains("name"), qstart, qend, tstart, tend) %>% 
-#   left_join(all_chromosomes %>% 
-#               filter(Species == "praehirsuta") %>% 
-#               select(Chromosome, Chrom, Cumul_position_start),
-#             join_by("qname" == "Chromosome")) %>% 
-#   group_by(qname) %>% 
-#   mutate(across(c(qstart, qend), ~ . + Cumul_position_start)) %>% 
-#   ungroup %>% 
-#   arrange(Chrom) %>% 
-#   select(-Cumul_position_start) %>% 
-#   left_join(all_chromosomes %>% 
-#               filter(Species == "ischiosetosa") %>% 
-#               select(Chromosome, Cumul_position_start),
-#             by = join_by("tname" == "Chromosome")) %>% 
-#   group_by(tname) %>% 
-#   mutate(across(c(tstart, tend), ~ . + Cumul_position_start)) %>% 
-#   ungroup %>% 
-#   ggplot(aes(x = tstart, y = qstart, color = Chrom)) +
-#   geom_segment(aes(x = tstart, xend = tend, y = qstart, yend = qend), lwd = 1.5) +
-#   geom_vline(data = all_chromosomes %>% 
-#                filter(Species == "ischiosetosa"),
-#              aes(xintercept = Cumul_position_start)) +
-#   geom_hline(data = all_chromosomes %>% 
-#                filter(Species == "praehirsuta"),
-#              aes(yintercept = Cumul_position_start)) +
-#   scale_color_manual(name = "Chromosome",
-#                      values = rainbow(11)) +
-#   labs(x = "J. ischiosetosa",
-#        y = "J. praehirsuta") +
-#   guides(colour = guide_legend(override.aes = list(alpha = 1))) +
-#   my_theme
-# 
-# albi_on_prae %>% 
-#   mutate(across(contains("name"), ~ str_split_fixed(., "\\.", 2)[, 1])) %>% 
-#   select(contains("name"), qstart, qend, tstart, tend) %>% 
-#   left_join(all_chromosomes %>% 
-#               filter(Species == "albifrons") %>% 
-#               select(Chromosome, Cumul_position_start),
-#             join_by("qname" == "Chromosome")) %>% 
-#   group_by(qname) %>% 
-#   mutate(across(c(qstart, qend), ~ . + Cumul_position_start)) %>% 
-#   ungroup %>% 
-#   select(-Cumul_position_start) %>% 
-#   left_join(all_chromosomes %>% 
-#               filter(Species == "praehirsuta") %>% 
-#               select(Chromosome, Chrom, Cumul_position_start),
-#             by = join_by("tname" == "Chromosome")) %>% 
-#   group_by(tname) %>% 
-#   mutate(across(c(tstart, tend), ~ . + Cumul_position_start)) %>% 
-#   ungroup %>% 
-#   ggplot(aes(x = tstart, y = qstart, color = Chrom)) +
-#   geom_segment(aes(x = tstart, xend = tend, y = qstart, yend = qend), lwd = 1.5) +
-#   geom_vline(data = all_chromosomes %>% 
-#                filter(Species == "praehirsuta"),
-#              aes(xintercept = Cumul_position_start)) +
-#   geom_hline(data = all_chromosomes %>% 
-#                filter(Species == "albifrons"),
-#              aes(yintercept = Cumul_position_start)) +
-#   scale_color_manual(name = "Chromosome",
-#                      values = rainbow(11)) +
-#   labs(x = "J. praehirsuta",
-#        y = "J. albifrons") +
-#   guides(colour = guide_legend(override.aes = list(alpha = 1))) +
-#   my_theme
-# 
-# ischio_on_albi %>% 
-#   mutate(across(contains("name"), ~ str_split_fixed(., "\\.", 2)[, 1])) %>% 
-#   select(contains("name"), qstart, qend, tstart, tend) %>% 
-#   left_join(all_chromosomes %>% 
-#               filter(Species == "ischiosetosa") %>% 
-#               select(Chromosome, Cumul_position_start),
-#             join_by("qname" == "Chromosome")) %>% 
-#   group_by(qname) %>% 
-#   mutate(across(c(qstart, qend), ~ . + Cumul_position_start)) %>% 
-#   ungroup %>% 
-#   select(-Cumul_position_start) %>% 
-#   left_join(all_chromosomes %>% 
-#               filter(Species == "albifrons") %>% 
-#               select(Chromosome, Cumul_position_start),
-#             by = join_by("tname" == "Chromosome")) %>% 
-#   group_by(tname) %>% 
-#   mutate(across(c(tstart, tend), ~ . + Cumul_position_start)) %>% 
-#   ungroup %>% 
-#   ggplot(aes(x = tstart, y = qstart, color = tname)) +
-#   geom_segment(aes(x = tstart, xend = tend, y = qstart, yend = qend), lwd = 1.5) +
-#   geom_vline(data = all_chromosomes %>% 
-#                filter(Species == "albifrons"),
-#              aes(xintercept = Cumul_position_start)) +
-#   geom_hline(data = all_chromosomes %>% 
-#                filter(Species == "ischiosetosa"),
-#              aes(yintercept = Cumul_position_start)) +
-#   scale_color_manual(name = "Chromosomes\nalbi",
-#                      values = rainbow(12)) +
-#   labs(x = "J. albifrons",
-#        y = "J. ischiosetosa") +
-#   guides(colour = guide_legend(override.aes = list(alpha = 1))) +
-#   my_theme
+## Dotplots
+
+If you want to compare species two by two, you can also trace some dotplots using the `trace_dotplot` function. This function works in the same way as the `make_synteny_plot` function. You can run it for all the chromosomes
+```{r Dotplot_albi_ischio, fig.width=10, fig.height=7, class.source="fold-show"}
+all_correspondences %>% 
+  filter(target == "albifrons") %>% 
+  trace_dotplot(alignments = .,
+                name_of_chromosomes = chromosome_names,
+                only_chromosome = NULL)
+
+```
+
+Or you can run it only on one pair of chromosomes as follows:
+```{r Ex_one_chr_dotplot, fig.width=10, fig.height=7, class.source="fold-show"}
+all_correspondences %>% 
+  filter(target == "albifrons") %>% 
+  trace_dotplot(alignments = .,
+                name_of_chromosomes = chromosome_names,
+                only_chromosome = "LG5")
+
+```
+
+The only difference with the `make_synteny_plot` function is that you have to filter the data beforehand to keep only the pair of species that you are interested in. It will fail otherwise.
+```{r Dotplot_albi_prae, fig.width=10, fig.height=7, class.source="fold-show"}
+# albifrons on praehirsuta
+all_correspondences %>% 
+  filter(query == "albifrons") %>% 
+  trace_dotplot(alignments = .,
+                name_of_chromosomes = chromosome_names)
 ```
 
 # References
