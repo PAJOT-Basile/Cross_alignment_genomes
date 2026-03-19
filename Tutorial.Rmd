@@ -6,176 +6,231 @@ output:
   html_document:
     code_folding: hide
     toc: true
+    toc_float: true
     number_sections: true
 editor_options: 
   chunk_output_type: console
+bibliography: References.bib
 ---
+Last update: `r Sys.Date()`
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Libraries
-```{r}
-if (!require("pacman")) install.packages("pacman")
-libraries <- c("tidyverse", "ggsci")
-pacman::p_load(char = libraries, character.only = TRUE)
-if (!require("devtools")) install.packages("devtools")
-if (!require("pafr"))devtools::install_github("dwinter/pafr")
-library(pafr)
+# Overview
 
-# pacman::p_load(char = c("dplyr", "tibble", "ggplot2", "readr", "tidyr", "stringr", "forcats", "lubridate", "purrr"))
+This document is a tutorial about how to use the functions that were written to do synteny analyses on several reference genomes. Here, we run this analysis on three species of the *Jaera albifrons* complex of species. We have three reference genomes for the 
+species *Jaera praehirsuta*, *Jaera albifrons* and *Jaera ischiosetosa*. These species are closely related and seem to have some interspecific structural polymorphism that we will call structural variants (SVs). However, this structural polymorphism has not been studied extensively for all species of the *Jaera albifrons* complex and the use of newly generated reference genomes allow us to look for finer chromosomal rearrangements that may not have been identified previously using linkage maps [@ribardiere_sex_2025].
+
+One way to identify large SVs is to look for conserved portions of genomes between species and look where they map in another species' genome. This is what is done in this document. Using `minimap2` [@li_new_2021], we produce `.paf` files (Pairwise mApping Format). In this tutorial, we produce and use these `paf` files to produce synteny plots and look for SVs in the genomes of our different species.
+
+# Prepare environment
+
+This script will automate a lot of steps to do the synteny analysis from the `fasta` files of the reference genomes: it will align reference genomes on one another and import them. The only step that is required and that is not done in this package is to index the reference genomes to get the lengths of the scaffolds or chromosomes in the reference genome. One way to do this is as follows:
+```{bash, eval=FALSE, class.source="fold-show"}
+samtools faidx reference_genome.fasta
 ```
-# Import useful variables
 
-```{r, class.source="fold-show"}
+The other important requirement of these analyses is that all the reference genomes and all the indexes must be in the same folder.
+
+
+Once all this is done, you can start to execute this script:
+
+The first step of the script is to prepare the environment: load the libraries and prepare the folder in which to write the `paf` files.
+
+```{r Libraries, message=FALSE, warning=FALSE, class.source="fold-show"}
+# TODO: rearrange this once the package is created to import it
+if (!require("pafr")){
+  if (!require("devtools")) install.packages("devtools")
+  devtools::install_github("dwinter/pafr")
+}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(char = c("tidyverse"), character.only = TRUE)
+```
+
+The variables defined here are to be tailored to your needs depending on where the reference genomes and the indexes are stored.
+```{r Useful_variables, class.source="fold-show"}
 # Where are located the reference genomes
 folder_ref_genomes <- "../Data/Reference_genomes/"
-# What are the names of the reference genomes
-vector_ref_genomes <- list.files(folder_ref_genomes, pattern = ".fasta$")
-
 # Where to store the output
 out_folder <- "../Data/pafs/"
+```
+
+Here, we create the folder in which to write the `paf` files if it does not already exist
+```{r Create_out_dir}
 # Create the output folder if it does not exist
 if (!dir.exists(out_folder)){
   dir.create(out_folder)
 }
-
-# Graph theme
-my_theme <- theme_bw() +
-  theme(text = element_text(size = 20))
 ```
 
-# Useful functions
+Here we import the functions that are to be used. This is temporary and will be transformed into a package shortly.
+```{r Import_functions, class.source="fold-show"}
 
-```{r, class.source="fold-show"}
-convert_to_numeric_if_possible <- function(x){
-  #' Try to convert a column to numeric if it is possible
-  #' @description This function tries to convert the values of the specified column
-    #' to numeric. If this returns NA (expected for characters or booleans), it 
-    #' keeps the column as it is.
-  #' @param x This is a column from a dataframe
-  #' 
-  #' @returns The column as numeric or as it was.
-  if (!is.na(as.numeric(x[1]))){
-    x <- as.numeric(x)
-  }
-  return(x)
-}
-
-add_table_to_df_in_iteration <- function(df1, df2){
-  #' Adds a data frame to another in an iteration
-  #' 
-  #' In an iteration, if we want to rbind a data frame to another, we have to 
-  #' check if the data frame is empty and if it is not, we can rbind the two
-  #' data frames together
-  #' 
-  #' @param df1 (data.frame).
-  #'    This data frame is the name of the data frame the data will be added to
-  #' @param df2 (data.frame).
-  #'    This data frame contains the data to add to the df1.
-  #'    
-  #' @returns (data.frame).
-  #'    This is the binding of the two data frames
-  #'
-  #' @export
-  
-  # Then, we have to check if the first data frame is empty
-  if (nrow(df1) == 0){
-    # If the first data frame is empty, we simply attribute the value of df2 to df1
-    df1 <- df2
-  }else{
-    # Otherwise we rbind the both of them
-    df1 <- df1 %>% 
-      rbind(df2)
-  }
-  return(df1)
-}
-
-"%!in%" <- function(x, y) (!(x %in% y))
-
-which_not_in <- function(x, y){
-  #' Function to get the values that are in x and not in y
-  #' @description
-    #' This function uses the `which` and the `%!in%` functions to keep the 
-    #' values that are in x and not in y.
-  #' @param x This vector is the vector to check
-  #' @param y This vector is the one being checked
-  #' @returns A vector containing the values that are in x and not in y
-  x[
-   (x %!in% y) %>% 
-    which() 
-  ] %>% 
-    return()
-}
-
+# TODO: transform this into a package.
 source("./Scripts/Synteny_analysis.r")
 ```
 
-# Import useful data
-```{r}
+# Align reference genomes
+
+The next requirement, once the environment is set up is to align reference genomes on one another. To do this, we use `minimap2`. It produces `.paf` files. To run minimap2, we run it on a cluster. But the script may be modified if you wish to run it locally, you can modify the following functions. Of course, should this be the case, the `./Scripts/run_minimap2_for_reference_genomes.sh` script should be modified as well. I am happy to take any questions on how to modify this to align reference genomes in a different method.
+```{r Functions_align_ref_genomes}
+#################################
+#### Align reference genomes ####
+#################################
+get_species_name_from_ref_genome <- function(ref_name, position_in_name=2){
+  #' Get the name of the species using the name of the reference genome
+  #' @description
+  #' This function splits the standardised name of the reference genome to get the name of the species.
+  #' The standard name should look something like: `Jaera_albifrons_chromosomes.fasta`.
+  #' @param ref_name This is a string with the name of the reference genome. It is like the example in the description.
+  #' @param position_in_name `default=2`. This argument describes the position of the name to return in the name of the
+  #' reference genome.
+  #'
+  #' @returns string. It returns the name of the species that was stored in the name of the reference genome.
+  
+  return(str_split_1(ref_name, "_")[position_in_name])
+}
+
+align_ref_genomes <- function(){
+  #' Align reference genomes
+  #' @description This way too long function is used to align reference genomes on one another.
+  #' It iterates on all unique combination of reference genomes to algin them on one another. A part 
+  #' of the function is taylored to my study as I am looking to align reference genomes in a specific
+  #' order. The lines can be commented if it is not useful and these lines will be indicated in commentry.
+  #' This function calls the minimap2 aligner using a bash script to run it in parallel for all the 
+  #' combinations of reference genomes.
+  #'
+  #' @param None
+  #'
+  #' @returns None
+  
+  # Make the unique pairs of reference genomes
+  combination_of_genomes <- combn(vector_ref_genomes, 2)
+  # Iterate over these pairs of reference genomes
+  for (col in 1:ncol(combination_of_genomes)){
+    # Get the names of the reference genomes
+    ref_genome_1 <- combination_of_genomes[1, col]
+    ref_genome_2 <- combination_of_genomes[2, col]
+    # Check that the firt genome is either praehirsuta or albifrons. Otherwise, change them
+    # These lines can be commented as they are taylored to my study. You can comment from here ...
+    if ((grepl("praehirsuta", ref_genome_2)) & (grepl("albifrons", ref_genome_1))){
+      .temp_var. <- ref_genome_2
+      ref_genome_2 <- ref_genome_1
+      ref_genome_1 <- .temp_var.
+      rm(.temp_var.)
+    }
+    # ... to here
+    # Get the name of the output file
+    name_output <- paste0(
+      out_folder,
+      get_species_name_from_ref_genome(ref_genome_2),
+      "_aligned_on_",
+      get_species_name_from_ref_genome(ref_genome_1),
+      ".paf"
+    )
+    
+    # Build the command line
+    command_line  <- paste0("./Scripts/run_minimap2_for_reference_genomes.sh ",
+                            folder_ref_genomes, ref_genome_1, " ", folder_ref_genomes, ref_genome_2, " ",
+                            name_output)
+    
+    # Run minimap2 using the bash script on a cluster
+    system2(command = "sbatch",
+            args = paste0("./Scripts/run_minimap2_for_reference_genomes.sh ",
+                          folder_ref_genomes, ref_genome_1, " ", folder_ref_genomes, ref_genome_2, " ",
+                          name_output))
+  }
+}
+
+```
+
+If this script is run several times and the alignment of genomes is very time consuming, we only re-run this alignment if the `paf` files are not created yet.
+
+**WARNING. This function looks for any `paf` file in the specified location. Should there be any `paf` file in the specified location, no alignment will be done. This function is not alignment-specific. In addition, the `align_ref_genomes` function is made to run all the pairwise alignments in the pairs of species that you have. If you wish to run only some alignments, you can modify the function or run the `./Scripts/run_minimap2_for_reference_genomes.sh` script manually on pairs of species.**
+```{r Func_check_folder}
+are_there_files_with_extension_in_folder <- function(folder_to_check, extension){
+  #' Check if there are any paf files in a folder
+  #' @description This function simply checks if there are any `.paf` files in the
+  #' specified folder.
+  #'
+  #' @param folder_to_check This string is the path of the folder to check for 
+  #' the specified extension.
+  #' @param extension String containing the extension to look for in the folder.
+  #' It must not contain a dot.
+  #'
+  #' @returns TRUE/FALSE The function returns TRUE if there is at least one `.paf` file in the
+  #' specified folder
+  
+  number_paf_files_output <- length(list.files(folder_to_check, patt = paste0(".", extension)))
+  return(number_paf_files_output > 0)
+}
+```
+
+```{r Align_ref_genomes, class.source="fold-show"}
+# Do the pairwise alignment of the genomes if it is not yet done
+# As the output of minimap2 is a paf file, we simply check if there are any paf files in the output folder
+# to check if the reference genomes were aligned.
+if (!are_there_files_with_extension_in_folder(out_folder, "paf")){
+  align_ref_genomes()
+}
+
+```
+This step takes a bit of time, so you can sit back and eat a snack while it runs on the cluster ;).
+
+
+# Import data
+
+Once the environment is prepared and the input files are created, we can start to import data.
+
+## Import the length of the chromosomes
+
+One of the necessities to trace a synteny plot is to have the names and lengths of all chromosomes for all the species we want to work with. This can be done using the `import_chromosome_lengths_for_all_files_of_folder` function (yes, the name is too long, but at least it is explicit). This function allows to import the names and lengths of chromosomes using either `.dict` or `.fai` files for all the files of the selected type (the default is `fai`) in the specified directory. 
+```{r Import_chrom_lengths, class.source="fold-show"}
+all_chromosomes <- import_chromosome_lengths_for_all_files_of_folder(folder_ref_genomes) %>% 
+  mutate(Species = str_split_fixed(Species, "_", 3)[, 2])
+
+head(all_chromosomes)
+```
+
+If you wish to import specifically one file from a specific folder, you can use the `import_chromosome_length` function to produce a similar table. However, in this table the name of the species is not given and has to be added manually to work with the rest of the package. 
+```{r Example_import_one_file, class.source="fold-show"}
+import_chromosome_length("../Data/Reference_genomes/Jaera_albifrons_chromosomes.fasta.fai")
+```
+
+In addition, in our study, some of the chromosomes were already named for the *J. praehirsuta* species. To keep the names that were already given to the chromosomes of this species, we import the following table that contains these names. If you do not have a species for which the chromosomes are not name (we will call this species "reference species" for the rest of the document), one will be appointed by default later in the analysis. The reference that we use is the one defined in @ribardiere_sex_2025.
+```{r Import_ref_chroms}
 chromosomes_prae_ordered <- read.table("../Data/sumstats_thinned_50k.tsv", header = TRUE) %>% 
   select(Chromosome, Chrom) %>% 
   unique %>% 
   arrange(Chrom)
 
-chromosomes_prae <- import_chromosome_length_from_dict("../Data/Reference_genomes/Jaera_praehirsuta_chromosomes.dict")
-
-chromosomes_ischio <- import_chromosome_length_from_dict("../Data/Reference_genomes/Jaera_ischiosetosa_chromosomes.dict")
-
-chromosomes_albi <- import_chromosome_length_from_dict("../Data/Reference_genomes/Jaera_albifrons_chromosomes.dict")
-# Bind the chromosome sizes together
-all_chromosomes <- chromosomes_prae %>% 
-  mutate(Species = "praehirsuta") %>% 
-  rbind(chromosomes_albi %>% 
-          mutate(Species = "albifrons")) %>% 
-  rbind(chromosomes_ischio %>% 
-          mutate(Species = "ischiosetosa")) %>% 
-  left_join(chromosomes_prae_ordered, by = "Chromosome") %>% 
-  arrange(Species, Chrom, desc(Length)) %>% 
-  group_by(Species) %>% 
-  mutate(Cumul_position_start = cumsum(lag(Length + 1, default = 0))) %>% 
-  ungroup
-  
+chromosomes_prae_ordered
 ```
 
-# Align reference genomes
 
-To do this, we use `minimap2` that allows to map one genome to another one. It produces `.paf` files. To run minimap2, we start it on the cluster
-```{r}
-# Do the pairwise alignment of the genomes if it is not yet done
-# As the output of minimap2 is a paf file, we simply check if there are any paf files in the output folder
-# to check if the reference genomes were aligned.
-if (!are_there_paf_files_in_outfolder(out_folder)){
-  align_ref_genomes()
-}
+## Import the results of the cross alignements
 
+Once the lengths of the chromosomes are imported, we want to import the cross alignments that we ran. To do this, we can use the `import_pafs_from_folder` function that uses the `read_paf` function from the [`pafr` package](https://github.com/dwinter/pafr) to read the `paf` files. Then, we convert it to a tidy data frame to be used in our analysis.
+
+In our analysis, we ran all the pairwise alignments possible, but there is one that we do not need. So, we filter the table.
+```{r Import_pafs, class.source="fold-show"}
+all_correspondences <- import_paf_from_folder(out_folder) %>% 
+  filter(query != "praehirsuta") %>% 
+  # We also rename the chromsoomes to keep only the prefix (before the dot)
+  mutate(across(contains("name"), ~ str_split_fixed(., "\\.", 2)[, 1]))
+
+all_correspondences %>% 
+  head()
 ```
 
-This step takes a bit of time, so you can sit back and eat a snack while it runs on the cluster ;).
-
-
-# Import the results of the cross alignements
-```{r}
+The same result can be obtained as follows:
+```{r, eval=FALSE, class.source="fold-show"}
 albi_on_prae <- import_paf("../Data/pafs/albifrons_aligned_on_praehirsuta.paf")
 
 ischio_on_albi <- import_paf("../Data/pafs/ischiosetosa_aligned_on_albifrons.paf")
 
-# prae_on_ischio <- import_paf("../Data/pafs/praehirsuta_aligned_on_ischiosetosa.paf")
-```
-
-```{r}
-# # Bind all the tables
-# all_correspondences <- prae_on_ischio %>%
-#   mutate(query = "praehirsuta",
-#          target = "ischiosetosa") %>%
-#   rbind(albi_on_prae %>%
-#           mutate(query = "albifrons",
-#                  target = "praehirsuta")) %>%
-#   rbind(ischio_on_albi %>%
-#           mutate(query = "ischiosetosa",
-#                  target = "albifrons")) %>%
-#   mutate(across(contains("name"), ~ str_split_fixed(., "\\.", 2)[, 1]))
 all_correspondences <- albi_on_prae %>%
   mutate(query = "albifrons",
          target = "praehirsuta") %>%
@@ -184,31 +239,77 @@ all_correspondences <- albi_on_prae %>%
                  target = "albifrons")) %>%
   mutate(across(contains("name"), ~ str_split_fixed(., "\\.", 2)[, 1]))
 ```
-## Plots
-### Synteny plots
-```{r}
+
+In the same way as before, should you wish to import just one specific `paf` file, you can do so using the `import_paf` function as follows:
+```{r Ex_import_one_paf, class.source="fold-show"}
+import_paf("../Data/pafs/albifrons_aligned_on_praehirsuta.paf")
+```
+
+# Synteny analyses
+
+Once all the files are imported and formated in the tidy format, we can start to prepare the data to plot it.
+
+## Find chromosome correspondences
+
+In synteny analyses, we need to know which chromosomes in species A corresponds to which chromosome in species B. For example, as in *J.praehirsuta*, the first chromosome LG1 is the sexual chromosome, we need to know which chromosome it corresponds to in the other species of the analysis. To do this, we can, in most cases, use the cumulative mapping sequence (total length of sequences from LG1 on *J. praehirsuta* that map on a chromosome of *J. albifrons* for example) to define the correspondences. In cases of rearrangements such as fusions/fissions or large translocations, this statistic is not enough and some other parameters are taken into account. All this is done using the `get_corresponding_chromosomes_species` function.
+
+```{r Correspondences_chroms, class.source="fold-show"}
 # Get the correspondences between the pairs of chromosomes
 correspondence_chroms <- all_correspondences %>% 
   get_corresponding_chromosomes_species()
 
+```
+
+Once the correspondences between chromosomes are found, as some chromosomes may have not been assembled in the same direction (for example from 5' to 3' in one species and from 3' to 5' in the other), we reverse the order of the mapping sequences along the chromosomes using the `reverse_all_chromosomes`. To know if there is a need to reverse the chromosome, this function runs a linear regression (`lm`) on the mapping positions in the chromosomes. If it is positive, there is no need to reverse the chromosome and if it is negative, it will reverse it.
+
+```{r Reverse_all_chromosomes, class.source="fold-show", warning=FALSE}
 all_correspondences <- all_correspondences %>% 
   reverse_all_chromosomes(correspondence_chroms)
-
 ```
 
-At this point, we have the correspondences between the chromosomes of each species. We need to define a species as a reference for our study. We will use *J. praehirsuta* as reference as it was used in [Ribardière *et al.*, 2025](https://doi.org/10.1101/2025.01.08.631900). This part might need to be changed for your study. If you do not have any already existing reference, the function `get_chromosome_names_all_species` will arrange the chromosomes by decreasing size.
-```{r}
-#TODO:
-# 1. Remove white spacing on top and bottom of plot
-# 2. Comment clearly the different functions
-# 3. Redact the tutorial to produce a nice document.
-# 6. See if there is an optimal way to do the minimum number of permutations to re-arrange the order of the chromosomes using the relative position of species (a lot more complex)
+If you need to reverse just one chromosome, you can do so by using the `reverse_chromosome` function that works as follows:
+```{r Reverse_one_chromosome, class.source="fold-show", warning=FALSE}
+reverse_chromosome(all_correspondences, "OZ239481")
 ```
 
-```{r}
+```{r Plot_reverse_one_chrom, warning=FALSE, fig.width=10}
+b4_reverse <- all_correspondences %>% 
+  filter(qname == "OZ239481") %>% 
+  mutate(Reversing = "Before_reversing")
+after_reverse <- b4_reverse %>% 
+  reverse_chromosome("OZ239481") %>% 
+  mutate(Reversing = "After_reversing")
+
+b4_reverse %>% 
+  rbind(after_reverse) %>% 
+  filter(alen > 5e4) %>% 
+  mutate(Reversing = factor(Reversing, levels = c("Before_reversing", "After_reversing"))) %>% 
+  ggplot(aes(x = qstart, y = tstart)) +
+  geom_point() +
+  facet_wrap(vars(Reversing), ncol = 2) +
+  labs(x = "Position along chromosome",
+       y = "Position along chromosome") +
+  theme_bw() +
+  theme(text = element_text(size = 20))
+```
+
+## Get the chromosome names
+
+At this point, we know which chromosomes of the different species match, but we have to name them. As the naming process in @ribardiere_sex_2025 was to group chromosomes that were fused/fissionned within and between different species (see figure 4 in @ribardiere_sex_2025), we kept the same naming syntax. We also used *J. praehirsuta* as a reference species to name the chromosomes.
+
+If you do not have a reference species, the `define_reference_for_chromosome_naming` called inside the `get_chromosome_names_all_species` will attribute a reference species to get the names of the chromosomes for each species (we call this the naming process). By default, the `define_reference_for_chromosome_naming` function orders species names by alphabetical order and takes the first one as reference. Then, it aligns chromosomes by decreasing size and names them in this order (the largest chromosome will be called "Chrom_1" and so on). The prefix of the name can be changed. For example, if you do not have any reference, you can run the `define_reference_for_chromosome_naming` as follows:
+
+```{r Ex_name_reference_species, class.source="fold-show"}
+define_reference_for_chromosome_naming(all_chromosomes, prefix = "LG")
+```
+
+As we have a reference species, we define it and get the names of the other chromosomes as follows:
+```{r Get_names_chroms, class.source="fold-show"}
 # The reference is defined here:
 reference_species_chromosomes <- all_chromosomes %>% 
   filter(Species == "praehirsuta") %>% 
+  left_join(chromosomes_prae_ordered,
+            by = "Chromosome") %>% 
   select(Chromosome, Chrom, Species) %>% 
   rename(Chromosome_name = Chrom) %>% 
   mutate(Chromosome_name = case_when(
@@ -221,8 +322,7 @@ reference_species_chromosomes <- all_chromosomes %>%
   ))
 
 
-chromosome_names <- get_chromosome_names_all_species(all_chromosomes = all_chromosomes %>% 
-                                                      select(Chromosome, Species, Length),
+chromosome_names <- get_chromosome_names_all_species(all_chromosomes = all_chromosomes,
                                                     correspondences_chromosomes = correspondence_chroms,
                                                     all_alignments = all_correspondences,
                                                     reference_chromosomes = reference_species_chromosomes) %>% 
@@ -233,23 +333,39 @@ chromosome_names <- get_chromosome_names_all_species(all_chromosomes = all_chrom
   ungroup %>% 
   mutate(Center_chrom = round(Cumul_position_start_chromosome + Length / 2))
 
+chromosome_names
+```
 
+We also compute the cumulative positions of the chromosomes along the genome once they are named correctly. This will be used later to put chromosomes in the right order in the synteny plot. You might have noticed that the cumulative position of the chromosomes is always larger than the sum of the start of the previous chromosome and the length of the previous chromosome. This is because for the synteny analysis, we do not want successive chromosomes to be too close to each other, so we add 10% of the genomes lengths' order of magnitude between each chromosome.
 
+## Synteny plots
+
+Once all this is done, you can finally do the synteny plot using the `make_synteny_plot_function`. This function can save a large figure directly in a specified folder. This is highly recommended as loading a plot in RStudio with a lot of data can be time-consuming. 
+```{r Make_synteny_plot, class.source="fold.show"}
 all_correspondences %>% 
   filter(query != "praehirsuta") %>% 
   make_synteny_plot(alignments = .,
                     name_of_chromosomes = chromosome_names %>%
                       filter(Chromosome_name != "mito"),
-                    file_name = "Figures/Final_figure_rectangles.png")
+                    file_name = "Figure_all_chroms.png")
 
+```
+
+The produced figure is shown here:
+
+![](./Figure_all_chroms.png)
+
+This function can also be used if you want to look at only one chromosome in the different species. You can use it as follows:
+```{r Ex_synteny_plot_one_species, class.source="fold-show", fig.width=10}
 all_correspondences %>% 
   filter(query != "praehirsuta") %>% 
   make_synteny_plot(alignments = .,
                     name_of_chromosomes = chromosome_names,
-                    file_name = "Figures/mitochrondria.png",
-                    only_chromosome = "mito",
+                    only_chromosome = "LG5",
                     small_alignment_threshold = 0)
 ```
+
+
 # Bin
 ### Dotplot
 ```{r}
@@ -355,8 +471,5 @@ all_correspondences %>%
 #   my_theme
 ```
 
-
-```{r}
-
-```
+# References
 
