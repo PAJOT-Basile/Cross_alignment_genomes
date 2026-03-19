@@ -1437,44 +1437,19 @@ make_synteny_plot <- function(alignments, name_of_chromosomes,
   
   gap_between_chroms <- 0.1 * 10 ^ order_magnitude_length_genome
   
-  # Prepare the data for plotting
-  data_to_plot <- alignments %>%
-    # We filter the data to keep alignments larger than the specified threshold
-    filter(alen > small_alignment_threshold) %>% 
-    # Add the correspondence of the chromosomes for the query and target species
-    left_join(name_of_chromosomes %>% 
-                select(Chromosome, Chromosome_name),
-              by = join_by("qname" == "Chromosome")) %>% 
-    left_join(name_of_chromosomes %>% 
-                select(Chromosome, Chromosome_name),
-              by = join_by("tname" == "Chromosome"),
-              suffix = c("_query", "_target"))
+  # Prepare the data to be plotted
+  prepared_data <- prepare_data_for_plotting(alignments, name_of_chromosomes,
+                                             only_chromosome, small_alignment_threshold)
   
-  # If we want to compute the data only for one chromosome, we filter the data
-  if (!is.null(only_chromosome)){
-    regex_filter_only_chrom <- paste0(only_chromosome, collapse = "|")
-    data_to_plot <- data_to_plot %>% 
-      filter(grepl(regex_filter_only_chrom, Chromosome_name_query),
-             grepl(regex_filter_only_chrom, Chromosome_name_target))
-    
-    name_of_chromosomes_to_plot <- name_of_chromosomes %>% 
-      filter(grepl(only_chromosome, Chromosome_name)) %>% 
-      group_by(Species) %>% 
-      mutate(Cumul_position_start_chromosome = cumsum(lag(Length + gap_between_chroms, default = 0)),
-             Center_chrom = Cumul_position_start_chromosome + Length / 2) %>% 
-      ungroup %>% 
-      get_species_number_according_to_order(order_species)
-  }else{
-    name_of_chromosomes_to_plot <- name_of_chromosomes %>% 
-      group_by(Species) %>% 
-      mutate(Cumul_position_start_chromosome = cumsum(lag(Length + gap_between_chroms, default = 0)),
-             Center_chrom = Cumul_position_start_chromosome + Length / 2) %>% 
-      ungroup %>%
-      get_species_number_according_to_order(order_species)
-  }
+  name_of_chromosomes_to_plot <- prepared_data$name_of_chromosomes %>% 
+    group_by(Species) %>% 
+    mutate(Cumul_position_start_chromosome = cumsum(lag(Length + gap_between_chroms, default = 0)),
+           Center_chrom = Cumul_position_start_chromosome + Length / 2) %>% 
+    ungroup %>%
+    get_species_number_according_to_order(order_species)
   
   # Prepare the data for plotting
-  data_to_plot <- data_to_plot %>%
+  data_to_plot <- prepared_data$data_to_plot %>%
     # First, compute the cumulative positions along the genome
     compute_cumulative_positions_along_genome(name_of_chromosomes_to_plot)
   
@@ -1511,10 +1486,8 @@ make_synteny_plot <- function(alignments, name_of_chromosomes,
               aes(xmin = start_chrom, xmax = End_chromosome,
                   ymin = nb_species - 0.05, ymax = nb_species + 0.05,
                   fill = Chromosome_name, group = Group_id),
-              colour = "black", lwd = 1.2, linejoin = "round", lineend = "round")
-  
-  # We finish the plot with the names of the chromosomes
-  p <- p +
+              colour = "black", lwd = 1.2, linejoin = "round", lineend = "round") +
+    # We finish the plot with the names of the chromosomes
     geom_text(data = name_of_chromosomes_to_plot,
               aes(x = Center_chrom, y = factor(nb_species), label = Chromosome_name)) +
     labs(x = "Position along genome",
@@ -1527,10 +1500,147 @@ make_synteny_plot <- function(alignments, name_of_chromosomes,
   
   
   # Choose if you want to save the figure or plot it
+  return_plot(file_name, p)
+}
+
+trace_dotplot <- function(alignments, name_of_chromosomes,
+                          only_chromosome = NULL,
+                          small_alignment_threshold = 5e4,
+                          file_name = NULL){
+  #' Trace a dotplot.
+  #' @description
+    #' This function allows to trace a dotplot between the alignments of two
+    #' species if you want to look at just one pair of species.
+  #' @param alignments This table contains the alignments for the different species
+  #' combinations. It is the equivalent of the `.paf` files, but transformed as tables
+  #' @param name_of_chromosomes This table contains the names of the chromosomes
+  #' for the different species. It is the output of the `get_chromosome_names_all_species`
+  #' function
+  #' @param only_chromosome This argument is a string or vector of strings that 
+  #' contains the name of one chromosome if you want to look at it individually.
+  #' It allows to filter the data to look only at this chromosome. The default
+  #' value is `NULL`.
+  #' @param small_alignment_threshold This number allows to filter small fragments
+  #' that map. It defines the threshold of what the user specifies as "small". The 
+  #' default value is `5e4`
+  #' @param file_name This string contains the name of the file to be produced in
+  #' your working directory. The default is `NULL`. In this case, it plots the graph
+  #' in your plot viewer. As soon as a string is specified, it will save the plot
+  #' without plotting it.
+  #' 
+  #' @returns The dotplot as a ggplot2 object
+  
+  # Isolate the name of the query species
+  query_species <- alignments %>% 
+    pull(query) %>% 
+    unique
+  
+  # Isolate the name of the target species
+  target_species <- alignments %>% 
+    pull(target) %>% 
+    unique
+  
+  # Prepare the data to be plotted
+  prepared_data <- prepare_data_for_plotting(alignments, name_of_chromosomes, only_chromosome, small_alignment_threshold)
+  
+  data_to_plot <- prepared_data$data_to_plot
+  name_of_chromosomes_to_plot <- prepared_data$name_of_chromosomes %>% 
+    group_by(Species) %>% 
+    mutate(Cumul_position_start_chromosome = cumsum(lag(Length + 1, default = 0)),
+           Center_chrom = Cumul_position_start_chromosome + Length / 2) %>% 
+    ungroup
+  
+  # Plot the data
+  p <- data_to_plot %>% 
+    compute_cumulative_positions_along_genome(name_of_chromosomes_to_plot) %>% 
+    mutate(Chromosome_name_query = str_split_fixed(Chromosome_name_query, "\\.", 2)[, 1]) %>% 
+    ggplot() +
+    geom_segment(aes(x = tstart, xend = tend, y = qstart, yend = qend,
+                     color = Chromosome_name_query), lwd = 1.5) +
+    geom_vline(data = name_of_chromosomes_to_plot %>%
+                 filter(Species == target_species),
+               aes(xintercept = Cumul_position_start_chromosome)) +
+    geom_hline(data = name_of_chromosomes_to_plot %>%
+                 filter(Species == query_species),
+               aes(yintercept = Cumul_position_start_chromosome)) +
+    scale_color_manual(name = "Chromosome",
+                       values = rainbow(11)) +
+    labs(x = target_species,
+         y = query_species) +
+    guides(colour = guide_legend(override.aes = list(alpha = 1))) +
+    theme_bw() +
+    theme(text = element_text(size = 20))
+  
+  # Choose if you want to save the figure or plot it
+  return_plot(file_name, p)
+}
+
+return_plot <- function(file_name, p){
+  #' Returns a plot if there is no specified file name
+  #' @description
+    #' This function checks if there is a specified file name. If it is the case
+    #' it saves the plot at the specified location. If not, it returns the plot.
+  #' @param file_name This is the name of the file in which to save the plot
+  #' @param p This is a ggplot object
+  #' 
+  #' @returns Either a plot or a message depending on the specified file name.
+  
   if (is.null(file_name)){
     return(p)
   }else{
     ggsave(plot = p, file_name, scale = 3, width = 2000, height = 1500, units = "px")
     message(paste0('File saved as: "', file_name, '"'))
   }
+}
+
+prepare_data_for_plotting <- function(alignments, name_of_chromosomes, only_chromosome, small_alignment_threshold){
+  #' Prepare the alignments to be plotted.
+  #' @description
+    #' This function filters the alignments on the specified threshold and keeps
+    #' the specified chromosomes if any are specified. Otherwise, it keeps them
+    #' all.
+  #' @param alignments This table contains the alignments for the different species
+  #' combinations. It is the equivalent of the `.paf` files, but transformed as tables.
+  #' It is the output of the `import_paf_from_folder` function.
+  #' @param name_of_chromosomes This table contains the names of the chromosomes
+  #' for the different species. It is the output of the `get_chromosome_names_all_species`
+  #' function
+  #' @param only_chromosome This argument is a string or vector of strings that 
+  #' contains the name of one chromosome if you want to look at it individually.
+  #' It allows to filter the data to look only at this chromosome.
+  #' @param small_alignment_threshold This number allows to filter small fragments
+  #' that map. It defines the threshold of what the user specifies as "small".
+  #' 
+  #' @returns A list with two levels, first the filtered alignments and second the
+  #' filtered names of the chromosomes.
+  
+  # Prepare the data for plotting
+  data_to_plot <- alignments %>%
+    # We filter the data to keep alignments larger than the specified threshold
+    filter(alen > small_alignment_threshold) %>% 
+    # Add the correspondence of the chromosomes for the query and target species
+    left_join(name_of_chromosomes %>% 
+                select(Chromosome, Chromosome_name),
+              by = join_by("qname" == "Chromosome")) %>% 
+    left_join(name_of_chromosomes %>% 
+                select(Chromosome, Chromosome_name),
+              by = join_by("tname" == "Chromosome"),
+              suffix = c("_query", "_target"))
+  
+  if (!is.null(only_chromosome)){
+    regex_filter_only_chrom <- paste0(only_chromosome, collapse = "|")
+    data_to_plot <- data_to_plot %>% 
+      filter(grepl(regex_filter_only_chrom, Chromosome_name_query),
+             grepl(regex_filter_only_chrom, Chromosome_name_target))
+    
+    name_of_chromosomes_to_plot <- name_of_chromosomes %>% 
+      filter(grepl(only_chromosome, Chromosome_name))
+  }else{
+    name_of_chromosomes_to_plot <- name_of_chromosomes
+  }
+  
+  return(list(
+    "data_to_plot" = data_to_plot,
+    "name_of_chromosomes" = name_of_chromosomes_to_plot
+  ))
 }
