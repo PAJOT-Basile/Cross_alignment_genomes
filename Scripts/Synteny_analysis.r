@@ -1092,7 +1092,7 @@ get_names_unfused_chromosomes <- function(string){
 #####################################################
 #### Get the correspondences between chromosomes ####
 #####################################################
-get_corresponding_chromosomes_species <- function(all_alignments){
+get_corresponding_chromosomes_species <- function(all_alignments, names_of_chromosomes){
   #' Get the correspondences between chromosomes of different species
   #' @description This function uses the alignments of the reference genomes got
   #' from the "paf" files to know which chromosomes are the closest, thus 
@@ -1106,6 +1106,20 @@ get_corresponding_chromosomes_species <- function(all_alignments){
   #' @returns A table with four columns: two columns with the names of the species
   #' the name of the chromosome in the first species and the name of the 
   #' corresponding chromosome in the second species
+  
+  names_chromosomes_alignments <- all_alignments %>%
+    pull(qname) %>%
+    unique() %>%
+    c(all_alignments %>%
+    pull(tname)) %>%
+    unique())
+  
+  if (any(names_chromosomes_alignments %!in% names_of_chromosomes$Chromosome)){
+    message('Keeping only chromosomes in the "names_of_chromosomes" table.')
+    all_alignments <- all_alignments %>%
+      filter(qname %in% names_of_chromosomes$Chromosome,
+             tname %in% names_of_chromosomes$Chromosome)
+  }
   all_alignments %>% 
     group_by(query, target, qname, tname) %>% 
     summarise(total_length = sum(alen), .groups = "drop_last") %>% 

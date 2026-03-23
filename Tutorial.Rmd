@@ -256,7 +256,7 @@ In synteny analyses, we need to know which chromosomes in species A corresponds 
 ```{r Correspondences_chroms, class.source="fold-show"}
 # Get the correspondences between the pairs of chromosomes
 correspondence_chroms <- all_correspondences %>% 
-  get_corresponding_chromosomes_species()
+  get_corresponding_chromosomes_species(all_chromosomes)
 
 ```
 
